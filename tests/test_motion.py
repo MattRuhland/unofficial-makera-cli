@@ -1,9 +1,10 @@
+import time
 import unittest
 
 from makera_cli import MakeraError
 from makera_cli.cli import build_parser
-from makera_cli.motion import (WARNINGS, limit_errors, plan, soft_limits, wait_idle,
-                               work_to_machine)
+from makera_cli.motion import (WARNINGS, limit_errors, plan, soft_limits, wait_cycle,
+                               wait_idle, work_to_machine)
 from makera_cli.protocol import parse_status
 
 STATUS = ("<Idle|MPos:-11.600,-14.600,-3.000,0.000|WPos:90.688,92.132,65.486,-50.000"
@@ -106,6 +107,44 @@ class Plans(unittest.TestCase):
         self.assertEqual(lines("abort"), ["abort"])
         self.assertEqual(lines("play", "my job.nc"), ["play /sd/gcodes/my\x01job.nc"])
         self.assertEqual(lines("send", "G4 P1"), ["G4 P1"])
+
+
+class FakeCycle:
+    """Replays status reports, one per `?`, as the machine answers."""
+
+    def __init__(self, states):
+        self.states = list(states)
+        self.asked = False
+
+    def realtime(self, char):
+        self.asked = char == "?"
+
+    def read(self, seconds):
+        time.sleep(seconds / 10)
+        if not (self.asked and self.states):
+            return []
+        self.asked = False
+        return [("status", "<%s|MPos:0,0,0|WPos:0,0,0>" % self.states.pop(0))]
+
+
+class WaitCycle(unittest.TestCase):
+    def test_waits_for_start_then_settled_idle(self):
+        fake = FakeCycle(["Idle", "Run", "Run", "Idle", "Run", "Idle", "Idle", "Idle", "Run"])
+        st = wait_cycle(fake, start_timeout=30, timeout=30)
+        self.assertEqual(st["state"], "Idle")
+        self.assertEqual(fake.states, ["Run"])  # one Idle between macro steps did not end the wait
+
+    def test_alarm(self):
+        with self.assertRaisesRegex(MakeraError, "Alarm"):
+            wait_cycle(FakeCycle(["Run", "Alarm"]), timeout=30)
+
+    def test_never_started(self):
+        with self.assertRaisesRegex(MakeraError, "stayed Idle"):
+            wait_cycle(FakeCycle(["Idle"] * 50), start_timeout=0.5, timeout=30)
+
+    def test_send_wait_flag(self):
+        self.assertTrue(build_parser().parse_args(["send", "--wait", "M496.1"]).wait)
+        self.assertFalse(build_parser().parse_args(["send", "M496.1"]).wait)
 
 
 class Interrupt(unittest.TestCase):

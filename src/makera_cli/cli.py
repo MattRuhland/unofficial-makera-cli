@@ -11,9 +11,9 @@ import time
 from makera_cli import MakeraError, __version__
 from makera_cli.camera import RESOLUTIONS, snapshot
 from makera_cli.link import PORT, discover
-from makera_cli.motion import OUTPUTS, PARK, WARNINGS, plan, soft_limits, wait_idle
-from makera_cli.protocol import (Session, parse_config, parse_diag, parse_ls, parse_wcs,
-                                 path_arg)
+from makera_cli.motion import OUTPUTS, PARK, WARNINGS, plan, soft_limits, wait_cycle, wait_idle
+from makera_cli.protocol import (Session, parse_active_wcs, parse_config, parse_diag, parse_ls,
+                                 parse_wcs, path_arg)
 from makera_cli.transfer import download, upload
 
 READ_STATES = ("Idle", "Sleep", "Alarm")
@@ -45,7 +45,9 @@ def show_status(s):
 
 def show_wcs(wcs, other):
     for name, v in wcs.items():
-        if name == "TLO":
+        if name == "active":
+            print("active %s" % v)
+        elif name == "TLO":
             print("TLO    %.4f" % v)
         elif name == "PRB":
             print("PRB    %s  (%s)" % (fmt_axes({k: v[k] for k in "xyz"}),
@@ -111,6 +113,8 @@ def run_action(sess, a, st):
         sess.command(line)
         if moves:
             wait_idle(sess, a.timeout)
+        elif getattr(a, "wait", False):
+            wait_cycle(sess, timeout=a.timeout)
         else:
             for text in sess.lines(quiet=0.5, timeout=3.0):
                 print("machine: %s" % text)
@@ -186,6 +190,9 @@ def build_parser():
     sub.add_parser("abort", help="action: abort the running job")
     p = sub.add_parser("send", help="action: send one raw console line")
     p.add_argument("line")
+    p.add_argument("--wait", action="store_true",
+                   help="wait for the machine to start moving and settle back to Idle, for "
+                        "macros such as probe cycles (uses --timeout)")
     return ap
 
 
@@ -235,6 +242,10 @@ def run(a):
         elif a.cmd == "wcs":
             sess.command("$#")
             wcs, other = parse_wcs(sess.lines())
+            sess.command("get wcs")
+            active = parse_active_wcs(sess.lines())
+            if active:
+                wcs["active"] = active
             if a.json:
                 print(json.dumps(wcs))
             else:

@@ -187,6 +187,16 @@ def parse_wcs(lines):
     return wcs, other
 
 
+def parse_active_wcs(lines):
+    """The active work coordinate system from the ``get wcs`` reply, ``[current WCS: G54]``,
+    or None when no line matches."""
+    for line in lines:
+        m = re.search(r"\[current WCS: (G5[4-9](?:\.[1-3])?)\]", line)
+        if m:
+            return m.group(1)
+    return None
+
+
 def parse_diag(line):
     """A ``{S:0,5000|L:0,0|...|RSSI:-57}`` report as {key: [ints]}."""
     a, b = line.find("{"), line.rfind("}")

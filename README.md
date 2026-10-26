@@ -53,7 +53,7 @@ This is an early release. The table shows what has been exercised against a real
 | Actions | `light` | Yes. On and off confirmed with `diagnose`. |
 | Actions | `jog` | Yes, single and multi-axis, with soft-limit refusals confirmed. |
 | Actions | `goto --machine` | Yes, including the raise to safe Z before an XY move. |
-| Actions | `send` | Yes |
+| Actions | `send` | Yes. `send --wait` is tested offline only. |
 | Actions | `play`, `pause`, `resume` | Yes. See [Known firmware behaviour](#known-firmware-behaviour). `pause` does not stop motion, and `play` triggers automatic bed cleaning at the end of the job. |
 | Actions | `goto` in work coordinates, `home`, `unlock`, `park`, `zero`, `spindle`, `vacuum`, `ext`, `air`, `abort` | No. Only the planning and safety checks are tested, offline. |
 
@@ -162,7 +162,7 @@ Prints the firmware version, for example `version = 1.1.3.0.1.13`.
 
 #### `wcs`
 
-Sends `$#` and prints the work coordinate systems G54 to G59.3, G28, G30, G92, the tool length offset and the last probe point.
+Sends `$#` and `get wcs`, and prints the work coordinate systems G54 to G59.3, G28, G30, G92, the tool length offset, the last probe point and the active work coordinate system (`active`, also in the JSON output).
 
 ```console
 $ makera wcs
@@ -171,6 +171,7 @@ G55    X     0.000  Y     0.000  Z     0.000  A     0.000  B     0.000
 ...
 TLO    6.5247
 PRB    X    -9.300  Y   -12.510  Z   -70.714  (hit)
+active G54
 ```
 
 `PRB` is in machine coordinates. The tool length measurement also probes, so after a tool change `PRB` shows the tool setter's position.
@@ -275,7 +276,7 @@ Actions need the machine Idle, with three exceptions. `pause`, `resume` and `abo
 | `pause` | `!` (realtime) | Feed hold. Does not stop motion on firmware 1.1.3.0.1.13. |
 | `resume` | `~` (realtime) | Cycle start, clears a hold. |
 | `abort` | `abort` | Stops the running job. |
-| `send 'LINE'` | the line as given | Any console command or G-code. No checks beyond the state check. |
+| `send 'LINE' [--wait]` | the line as given | Any console command or G-code. No checks beyond the state check. With `--wait`, the CLI waits for the machine to start moving and then to stay Idle for three polls in a row. That suits firmware macros such as probe cycles, which pass through Idle between steps. `--timeout` applies. |
 
 Manual tool changes (`M6`) are not included yet. During a manual change the machine waits for confirmation from the connected client, and the CLI cannot answer that prompt.
 

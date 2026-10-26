@@ -164,6 +164,46 @@ def plan(a, st, limits):
     raise MakeraError("no plan for %s" % c)
 
 
+def wait_cycle(sess, start_timeout=8.0, timeout=600.0, settle=3):
+    """Wait for the machine to leave Idle and then settle back to Idle.
+
+    For commands that run as firmware macros (probe cycles, M496 moves and similar), which can
+    pass through Idle between steps, so Idle must hold for ``settle`` polls in a row. Returns the
+    final status. Raises MakeraError if the machine never leaves Idle, on Alarm, or on timeout.
+    Ctrl-C stops waiting and sends nothing.
+    """
+    t0, started, idle_seen, st = time.time(), False, 0, None
+    try:
+        while time.time() - t0 < timeout:
+            sess.realtime("?")
+            t = time.time() + 0.6
+            while time.time() < t:
+                for kind, text in sess.read(0.1):
+                    if kind == "status":
+                        st = parse_status(text)
+                    elif text:
+                        print("machine: %s" % text, file=sys.stderr)
+            if st is None:
+                continue
+            if st["state"] == "Alarm":
+                raise MakeraError("the machine went to Alarm. Check it before "
+                                  "anything else, then run: makera --yes unlock")
+            if st["state"] != "Idle":
+                started, idle_seen = True, 0
+            elif started:
+                idle_seen += 1
+                if idle_seen >= settle:
+                    return st
+            elif time.time() - t0 > start_timeout:
+                raise MakeraError("the machine stayed Idle, so the command did not start any "
+                                  "motion. Some firmware commands are ignored when the machine "
+                                  "is not homed.")
+    except KeyboardInterrupt:
+        raise MakeraError("stopped waiting. Nothing was sent, and the machine may still be "
+                          "moving. Use the machine's stop button to stop it.")
+    raise MakeraError("the machine did not return to Idle in %.0f s (state %s)" % (timeout, st and st["state"]))
+
+
 def wait_idle(sess, timeout=120.0):
     """Poll status until the machine is Idle after a move, and return the last status.
 

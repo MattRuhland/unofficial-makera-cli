@@ -4,6 +4,14 @@ All notable changes to this project are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `send --wait`: wait for the machine to start moving and settle back to Idle, for firmware
+  macros that pass through Idle between steps.
+- `wcs` reports the active work coordinate system from `get wcs`, as `active`.
+
 ## [0.1.1] - 2026-10-26
 
 ### Changed

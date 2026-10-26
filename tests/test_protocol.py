@@ -7,8 +7,8 @@ from makera_cli._vendor.carvera.protocols.framing import (PTYPE_NORMAL_INFO, PTY
                                                           build_frame)
 from makera_cli.camera import read_frame, text_frame
 from makera_cli.link import parse_announcement, split_frames
-from makera_cli.protocol import (parse_config, parse_diag, parse_ls, parse_status, parse_wcs,
-                                 path_arg)
+from makera_cli.protocol import (parse_active_wcs, parse_config, parse_diag, parse_ls,
+                                 parse_status, parse_wcs, path_arg)
 
 # Replies in the shapes a Z1 sends them.
 STATUS = ("<Idle|MPos:-11.600,-14.600,-3.000,0.000|WPos:90.688,92.132,65.486,-50.000"
@@ -83,6 +83,11 @@ class Parsers(unittest.TestCase):
     def test_wcs_with_rotation(self):
         wcs, _ = parse_wcs(["[G54:-123.68,-123.68,-123.68,-50,0.000,25.123]"])
         self.assertEqual(wcs["G54"]["rotation"], 25.123)
+
+    def test_active_wcs(self):
+        self.assertEqual(parse_active_wcs(["[current WCS: G55]", "ok"]), "G55")
+        self.assertEqual(parse_active_wcs(["[current WCS: G59.2]"]), "G59.2")
+        self.assertIsNone(parse_active_wcs(["ok"]))
 
     def test_diag(self):
         d = parse_diag("{S:0,5000|L:0,0|V:1,38|RSSI:-46}")
