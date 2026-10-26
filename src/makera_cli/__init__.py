@@ -1,6 +1,6 @@
 """Unofficial command line interface for the Makera Z1 desktop CNC machine."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 
 class MakeraError(Exception):

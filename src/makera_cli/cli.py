@@ -11,7 +11,7 @@ import time
 from makera_cli import MakeraError, __version__
 from makera_cli.camera import RESOLUTIONS, snapshot
 from makera_cli.link import PORT, discover
-from makera_cli.motion import OUTPUTS, PARK, plan, soft_limits, wait_idle
+from makera_cli.motion import OUTPUTS, PARK, WARNINGS, plan, soft_limits, wait_idle
 from makera_cli.protocol import (Session, parse_config, parse_diag, parse_ls, parse_wcs,
                                  path_arg)
 from makera_cli.transfer import download, upload
@@ -79,6 +79,8 @@ def run_action(sess, a, st):
     if need and st["state"] not in need and not a.force:
         raise MakeraError("machine state is %s. %s needs %s (or pass --force)."
                           % (st["state"], a.cmd, " or ".join(need)))
+    if a.cmd in WARNINGS and not (a.cmd == "spindle" and a.state == "off"):
+        print(WARNINGS[a.cmd])
     if a.cmd in ("pause", "resume"):
         char = "!" if a.cmd == "pause" else "~"
         print("%s realtime %r" % ("send" if a.yes else "would send", char))
@@ -176,10 +178,10 @@ def build_parser():
     for name in OUTPUTS:
         sub.add_parser(name, help="action: %s on or off" % name).add_argument(
             "state", choices=("on", "off"))
-    p = sub.add_parser("play", help="action: start a file from the SD card")
+    p = sub.add_parser("play", help="action: start a file (bed cleaning can spin the cutter at the end)")
     p.add_argument("name")
     p.add_argument("--dir", default="/sd/gcodes")
-    sub.add_parser("pause", help="action: feed hold (!)")
+    sub.add_parser("pause", help="action: feed hold (!), does not stop motion on Z1 firmware 1.1.3")
     sub.add_parser("resume", help="action: cycle start (~)")
     sub.add_parser("abort", help="action: abort the running job")
     p = sub.add_parser("send", help="action: send one raw console line")

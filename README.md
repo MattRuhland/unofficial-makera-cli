@@ -48,9 +48,14 @@ This is an early release. The table shows what has been exercised against a real
 | Discovery | `find` | Yes |
 | Reading | `status`, `version`, `wcs`, `diagnose` | Yes |
 | Files | `ls`, `download`, `config` | Yes. A downloaded file matched the original's MD5. |
-| Files | `upload` | Yes, with the same transfer code in an earlier script. Not yet through this package. |
+| Files | `upload` | Yes. Size and the machine's `upload success` confirmed. |
 | Camera | `snapshot` | Yes |
-| Actions | `home`, `unlock`, `jog`, `goto`, `park`, `zero`, `spindle`, outputs, `play`, `pause`, `resume`, `abort`, `send` | No. Only the planning and safety checks are tested, offline. |
+| Actions | `light` | Yes. On and off confirmed with `diagnose`. |
+| Actions | `jog` | Yes, single and multi-axis, with soft-limit refusals confirmed. |
+| Actions | `goto --machine` | Yes, including the raise to safe Z before an XY move. |
+| Actions | `send` | Yes |
+| Actions | `play`, `pause`, `resume` | Yes. See [Known firmware behaviour](#known-firmware-behaviour). `pause` does not stop motion, and `play` triggers automatic bed cleaning at the end of the job. |
+| Actions | `goto` in work coordinates, `home`, `unlock`, `park`, `zero`, `spindle`, `vacuum`, `ext`, `air`, `abort` | No. Only the planning and safety checks are tested, offline. |
 
 Other Makera machines (Carvera, Carvera Air) use related protocols but are untested. The CLI refuses machines that answer in the older plain-text protocol.
 
@@ -245,9 +250,11 @@ send G90 G0 Z5
 state Idle  machine X  -102.288  Y  -106.732  Z   -63.486  A     0.000
 ```
 
-The second output is illustrative. Actions have not yet run against a real machine (see [Status](#status)).
+The second output is illustrative, because `goto` in work coordinates has not yet run against a real machine. `goto --machine` has (see [Status](#status)).
 
-After any move, the CLI polls status until the machine is Idle and then prints the final machine position. Pressing Ctrl-C while it waits sends a feed hold.
+After any move, the CLI polls status until the machine is Idle and then prints the final machine position. Pressing Ctrl-C while it waits stops the CLI and sends nothing to the machine. The machine keeps moving. Use its stop button to stop it.
+
+Some actions print a warning with their plan, in dry runs and real runs alike: `play`, `pause`, `send` and `spindle on`.
 
 Actions need the machine Idle, with three exceptions. `pause`, `resume` and `abort` run in any state, and `unlock` runs in Alarm.
 
@@ -255,7 +262,7 @@ Actions need the machine Idle, with three exceptions. `pause`, `resume` and `abo
 |---|---|---|
 | `home` | `$H` | Homes all axes. |
 | `unlock` | `$X` | Clears an alarm. Find the cause first. |
-| `jog AXIS... [--feed F]` | `$J X10`, one line per axis | Relative moves, for example `jog X10 Y-5 Z2`. Each target is checked against the soft limits. |
+| `jog AXIS... [--feed F]` | `$J X10`, one line per axis | Relative moves, for example `jog X10 Y-5 Z2`. Each target is checked against the soft limits. Axes move one after another. |
 | `goto AXIS... [--machine] [--direct]` | `G90 G0 ...` or `G53 G0 ...` | Rapid move in work coordinates, or machine coordinates with `--machine`. Raises Z to machine Z-2 first unless `--direct`, then moves XY, then Z. Checked against the soft limits. |
 | `park clearance\|origin\|anchor1\|anchor2` | `M496.1` to `M496.4` | Moves to the clearance position, the work origin, or anchor 1 or 2. |
 | `zero AXES [--value N]` | `G10L20P0X0Y0` | Sets the current position to N (default 0) on the named axes of the active work coordinate system, for example `zero xy` or `zero z`. Does not move. |
@@ -264,9 +271,9 @@ Actions need the machine Idle, with three exceptions. `pause`, `resume` and `abo
 | `vacuum on\|off` | `M801 S100` / `M802` | Untested on a Z1. |
 | `ext on\|off` | `M851 S100` / `M852` | External output. |
 | `air on\|off` | `M7` / `M9` | Untested on a Z1. |
-| `play NAME [--dir DIR]` | `play /sd/gcodes/NAME` | Checks that the file exists first. Starts the job. |
-| `pause` | `!` (realtime) | Feed hold. |
-| `resume` | `~` (realtime) | Cycle start, resumes after a hold. |
+| `play NAME [--dir DIR]` | `play /sd/gcodes/NAME` | Checks that the file exists first. Starts the job. When the job ends, automatic bed cleaning can spin the loaded cutter, even if the file has no `M3`. |
+| `pause` | `!` (realtime) | Feed hold. Does not stop motion on firmware 1.1.3.0.1.13. |
+| `resume` | `~` (realtime) | Cycle start, clears a hold. |
 | `abort` | `abort` | Stops the running job. |
 | `send 'LINE'` | the line as given | Any console command or G-code. No checks beyond the state check. |
 
@@ -283,7 +290,8 @@ What the CLI does before sending an action:
 - For `jog` and `goto`, downloads `config.txt`, reads `soft_endstop.<axis>_min`, and refuses any target outside the box from that minimum to 0. Home is 0 on every axis and travel runs negative. Work coordinates are converted to machine coordinates with the offset and rotation from the status report, which already include the active tool length offset. If soft limits are off in the configuration, the CLI warns and skips this check.
 - For `goto`, raises Z to machine Z-2 before any XY move, unless `--direct`.
 - For `spindle on`, refuses when a probe, the laser or no tool is active.
-- During a move, sends a feed hold if you press Ctrl-C, and stops with an error if the machine enters Alarm.
+- For `play`, `pause`, `send` and `spindle on`, prints a warning about the risk the checks cannot cover.
+- During a move, stops with an error if the machine enters Alarm.
 
 What the CLI cannot know:
 
@@ -291,10 +299,22 @@ What the CLI cannot know:
 - Whether a tool is really in the collet, or which tool it is.
 - Whether the machine has been homed since power-on, or whether homing has drifted.
 - Anything about `send`. Raw lines go straight to the machine.
+- What the firmware does on its own, such as the end-of-job routine below.
 
-Before the first real use, run each action without `--yes` and read the plan. Stand at the machine with the emergency stop in reach for every move.
+Before the first real use, run each action without `--yes` and read the plan. Stand at the machine with the emergency stop in reach for every move. The CLI has no command that reliably stops motion. The stop button on the machine does.
 
 The firmware's own soft limits stay enabled as the last line of defence.
+
+### Known firmware behaviour
+
+Observed on a Z1 with firmware `1.1.3.0.1.13`:
+
+| Behaviour | Detail |
+|---|---|
+| Feed hold does not stop motion | After `!` (the `pause` command), the state reads `Hold`, but the axes keep moving at the programmed feed and the queued moves end on schedule. This was measured by polling position every 0.9 seconds over one connection, for a console `G1` move and during file playback. `resume` returns the state to `Run`. |
+| Position is misreported during Hold | While the state is `Hold`, `MPos` in the status report shows the end point of the queued moves. The true position is unknown until the state leaves `Hold`. |
+| Automatic bed cleaning after a job | When playback of any file ends, the firmware runs its bed-cleaning routine if `bed_cleaning.enable` is `true` in `config.txt`. The machine moves to the front of the bed, lowers the brush and can spin the loaded cutter. This happens even when the file contains no spindle command. Check the setting with `makera config bed_cleaning.enable`. |
+| `$J` needs spaces between axes | `$J X-3 Y-3` moves diagonally. `$J X-3Y-3` moves only X and reports no error. The `jog` command sends one axis per line, so it is not affected. Watch for this when you use `send`. |
 
 ## JSON output and scripting
 
@@ -358,6 +378,8 @@ The frame encoder and the transfer code are vendored unmodified from the Carvera
 | `machine state is Run` | A job is running. Reading and file commands wait for it to end, because the machine serves the SD card to the job. `status`, `pause` and `abort` still work. |
 | `no "upload success"` | The transfer finished but the machine did not confirm it. Check the size with `makera ls` and upload again. |
 | Studio's camera view froze | `makera snapshot` took the camera stream. Reopen the camera view in Studio. |
+| The machine moved to the front and spun the tool after a job | Automatic bed cleaning. See [Known firmware behaviour](#known-firmware-behaviour). |
+| `pause` showed Hold but the machine kept moving | Feed hold does not stop motion on this firmware. Use the machine's stop button. |
 
 ## Development
 

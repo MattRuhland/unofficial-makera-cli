@@ -2,7 +2,8 @@ import unittest
 
 from makera_cli import MakeraError
 from makera_cli.cli import build_parser
-from makera_cli.motion import limit_errors, plan, soft_limits, work_to_machine
+from makera_cli.motion import (WARNINGS, limit_errors, plan, soft_limits, wait_idle,
+                               work_to_machine)
 from makera_cli.protocol import parse_status
 
 STATUS = ("<Idle|MPos:-11.600,-14.600,-3.000,0.000|WPos:90.688,92.132,65.486,-50.000"
@@ -105,6 +106,31 @@ class Plans(unittest.TestCase):
         self.assertEqual(lines("abort"), ["abort"])
         self.assertEqual(lines("play", "my job.nc"), ["play /sd/gcodes/my\x01job.nc"])
         self.assertEqual(lines("send", "G4 P1"), ["G4 P1"])
+
+
+class Interrupt(unittest.TestCase):
+    def test_ctrl_c_sends_nothing(self):
+        # A feed hold does not stop motion on the Z1, so Ctrl-C must not pretend it does.
+        class Fake:
+            sent = []
+
+            def realtime(self, char):
+                self.sent.append(char)
+                if char == "?":
+                    raise KeyboardInterrupt
+
+        fake = Fake()
+        with self.assertRaisesRegex(MakeraError, "stop button"):
+            wait_idle(fake, timeout=5)
+        self.assertEqual(fake.sent, ["?"])
+
+
+class Warnings(unittest.TestCase):
+    def test_risky_actions_warn(self):
+        self.assertIn("bed cleaning", WARNINGS["play"])
+        self.assertIn("does not stop motion", WARNINGS["pause"])
+        self.assertIn("spindle", WARNINGS["send"])
+        self.assertIn("spindle", WARNINGS["spindle"])
 
 
 if __name__ == "__main__":

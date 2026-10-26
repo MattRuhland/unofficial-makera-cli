@@ -27,6 +27,21 @@ OUTPUTS = {
 }
 PARK = {"clearance": "M496.1", "origin": "M496.2", "anchor1": "M496.3", "anchor2": "M496.4"}
 
+# Printed with the plan, in dry runs and real runs alike, for actions whose risk the safety
+# checks cannot cover.
+WARNINGS = {
+    "play": "WARNING: the cutter can spin at the end of this job. When playback ends, the Z1 "
+            "runs its automatic bed cleaning (config bed_cleaning.enable). It moves to the front "
+            "of the bed and can spin the loaded tool, even if the file has no M3. Keep clear of "
+            "the machine and keep the stop button in reach.",
+    "pause": "WARNING: on Z1 firmware 1.1.3.0.1.13 a feed hold does not stop motion. The state "
+             "reads Hold, but the axes keep moving to the end of the queued moves. Do not rely "
+             "on this to stop the machine. Use its stop button.",
+    "send": "WARNING: raw lines get no safety checks. A line can move the machine or spin the "
+            "spindle.",
+    "spindle": "WARNING: the spindle will spin.",
+}
+
 
 def is_probe_tool(tool):
     """Tool numbers the firmware treats as a 3D probe."""
@@ -152,8 +167,9 @@ def plan(a, st, limits):
 def wait_idle(sess, timeout=120.0):
     """Poll status until the machine is Idle after a move, and return the last status.
 
-    Machine messages are printed to stderr. Alarm ends the wait with an error. Ctrl-C sends a
-    feed hold before exiting.
+    Machine messages are printed to stderr. Alarm ends the wait with an error. Ctrl-C stops
+    waiting and sends nothing: on Z1 firmware 1.1.3.0.1.13 a feed hold does not stop motion,
+    so sending one would only give false confidence. Stopping the machine is a physical action.
     """
     end, idle_seen, st = time.time() + timeout, 0, None
     time.sleep(0.3)
@@ -173,7 +189,6 @@ def wait_idle(sess, timeout=120.0):
             if idle_seen >= 2:
                 return st
     except KeyboardInterrupt:
-        sess.realtime("!")
-        raise MakeraError("interrupted: feed hold sent. `makera --yes resume` continues, "
-                          "`makera --yes abort` stops.")
+        raise MakeraError("stopped waiting. Nothing was sent, and the machine may still be "
+                          "moving. Use the machine's stop button to stop it.")
     raise MakeraError("still not Idle after %.0f s (state %s)" % (timeout, st and st["state"]))
