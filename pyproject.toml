@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unofficial-makera-cli"
+dynamic = ["version"]
+description = "Unofficial command line interface for the Makera Z1 desktop CNC machine"
+readme = "README.md"
+license = { text = "GPL-2.0" }
+requires-python = ">=3.10"
+dependencies = []
+keywords = ["makera", "z1", "cnc", "cli", "carvera"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Repository = "https://github.com/MattRuhland/unofficial-makera-cli"
+Issues = "https://github.com/MattRuhland/unofficial-makera-cli/issues"
+
+[project.scripts]
+makera = "makera_cli.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "makera_cli.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"makera_cli._vendor.carvera" = ["LICENSE"]

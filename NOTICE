@@ -1,0 +1,20 @@
+Unofficial Makera CLI
+https://github.com/MattRuhland/unofficial-makera-cli
+
+This project is not affiliated with, endorsed by, or supported by Makera Inc. "Makera",
+"Makera Z1", "Makera Studio" and "Carvera" are trademarks of their respective owners and are
+used here only to describe the hardware and software this tool works with.
+
+This product includes software from the Carvera Community controller
+(https://github.com/Carvera-Community/Carvera_Controller), licensed under the GNU General
+Public License v2.0:
+
+  - src/makera_cli/_vendor/carvera/XMODEM.py
+  - src/makera_cli/_vendor/carvera/protocols/framing.py
+
+XMODEM.py is derived from tehmaze/xmodem (https://github.com/tehmaze/xmodem), MIT License,
+Copyright (c) 2010 Wijnand Modderman, Copyright (c) 1981 Chuck Forsberg.
+
+Command strings and reply formats elsewhere in this project follow the behaviour of the
+Carvera Community controller, which in turn builds on Makera's original Carvera Controller
+and on bCNC (https://github.com/vlachoudis/bCNC, GPL-2.0).
