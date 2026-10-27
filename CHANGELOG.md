@@ -11,6 +11,7 @@ All notable changes to this project are listed here. The format follows
 - `send --wait`: wait for the machine to start moving and settle back to Idle, for firmware
   macros that pass through Idle between steps.
 - `wcs` reports the active work coordinate system from `get wcs`, as `active`.
+- `probe-laser on|off`: the probe alignment laser (`M494.1` / `M494.2`).
 
 ## [0.1.1] - 2026-10-26
 

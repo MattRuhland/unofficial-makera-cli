@@ -24,6 +24,9 @@ OUTPUTS = {
     "vacuum": ("M801 S100", "M802"),
     "ext": ("M851 S100", "M852"),
     "air": ("M7", "M9"),
+    # The probe alignment laser (Makera firmware M494.1 opens it, M494.2 closes it). Named
+    # probe-laser so it is never confused with the engraving laser module.
+    "probe-laser": ("M494.1", "M494.2"),
 }
 PARK = {"clearance": "M496.1", "origin": "M496.2", "anchor1": "M496.3", "anchor2": "M496.4"}
 

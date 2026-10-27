@@ -51,6 +51,7 @@ This is an early release. The table shows what has been exercised against a real
 | Files | `upload` | Yes. Size and the machine's `upload success` confirmed. |
 | Camera | `snapshot` | Yes |
 | Actions | `light` | Yes. On and off confirmed with `diagnose`. |
+| Actions | `probe-laser` | Yes |
 | Actions | `jog` | Yes, single and multi-axis, with soft-limit refusals confirmed. |
 | Actions | `goto --machine` | Yes, including the raise to safe Z before an XY move. |
 | Actions | `send` | Yes. `send --wait` is tested offline only. |
@@ -269,6 +270,7 @@ Actions need the machine Idle, with three exceptions. `pause`, `resume` and `abo
 | `zero AXES [--value N]` | `G10L20P0X0Y0` | Sets the current position to N (default 0) on the named axes of the active work coordinate system, for example `zero xy` or `zero z`. Does not move. |
 | `spindle on RPM` / `spindle off` | `M3 S12000` / `M5` | Refuses `on` while the active tool is the 3D probe (0, 9999, 999990 and up), the laser (8888) or none (-1). |
 | `light on\|off` | `M821` / `M822` | Work light. |
+| `probe-laser on\|off` | `M494.1` / `M494.2` | Probe alignment laser, per Makera's firmware source. Not the engraving laser. Tested on a Z1. |
 | `vacuum on\|off` | `M801 S100` / `M802` | Untested on a Z1. |
 | `ext on\|off` | `M851 S100` / `M852` | External output. |
 | `air on\|off` | `M7` / `M9` | Untested on a Z1. |

@@ -102,6 +102,8 @@ class Plans(unittest.TestCase):
     def test_outputs_and_job_control(self):
         self.assertEqual(lines("light", "on"), ["M821"])
         self.assertEqual(lines("light", "off"), ["M822"])
+        self.assertEqual(lines("probe-laser", "on"), ["M494.1"])
+        self.assertEqual(lines("probe-laser", "off"), ["M494.2"])
         self.assertEqual(lines("home"), ["$H"])
         self.assertEqual(lines("park", "clearance"), ["M496.1"])
         self.assertEqual(lines("abort"), ["abort"])
