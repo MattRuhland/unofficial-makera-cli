@@ -7,7 +7,7 @@ from makera_cli._vendor.carvera.protocols.framing import (PTYPE_NORMAL_INFO, PTY
                                                           build_frame)
 from makera_cli.camera import read_frame, text_frame
 from makera_cli.link import parse_announcement, split_frames
-from makera_cli.protocol import (parse_active_wcs, parse_config, parse_diag, parse_ls,
+from makera_cli.protocol import (parse_active_wcs, parse_config, parse_diag, parse_limits, parse_ls,
                                  parse_status, parse_wcs, path_arg)
 
 # Replies in the shapes a Z1 sends them.
@@ -133,3 +133,17 @@ class Camera(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Limits(unittest.TestCase):
+    def test_actuator_reply(self):
+        got = parse_limits([" X: 20  Y: 20  Z: 10  A: 30  B: 1.66667 ", "ok"])
+        self.assertEqual(got, {"X": 1200.0, "Y": 1200.0, "Z": 600.0})
+
+    def test_cartesian_reply(self):
+        got = parse_limits([" X: 66.6667  Y: 66.6667  Z: 33.3333  S: -1 ", "ok"])
+        self.assertAlmostEqual(got["X"], 4000.0, places=1)
+
+    def test_no_limits_is_an_error(self):
+        with self.assertRaises(MakeraError):
+            parse_limits(["ok"])

@@ -9,6 +9,11 @@ live view open in Makera Studio, which may not reconnect by itself.
 
 Resolution is the only camera setting. It is set over HTTP on port 80 and persists on the
 camera, so other viewers see the change too.
+
+A resolution change does not take effect at once. Measured on a Z1 on 2026-10-31: the stream sends
+a few more frames at the old size. Then it sends one bad frame, whose header gives the new size
+while its data is still the size of an old frame. That frame is a valid JPEG and decodes to garbage.
+So ``stable_frame`` keeps only a frame that agrees with the one before it.
 """
 
 import base64
@@ -30,6 +35,10 @@ RESOLUTION_PATH = "/api/camera/resolution"
 # about 10 fps at 1600x1200. The firmware answers 200 to other values and ignores them.
 RESOLUTIONS = {10: "640x480", 11: "800x600", 12: "1024x768", 13: "1280x720",
                14: "1280x1024", 15: "1600x1200"}
+
+
+SKIP_FRAMES = 3  # the first frames of a stream can be buffered or left over from a size change
+MAX_FRAME_RATIO = 2.0  # neighbouring good frames are close in bytes; the bad frame is about 5x
 
 
 def set_resolution(host, value):
@@ -77,6 +86,40 @@ def text_frame(text):
     return bytes([0x81, 0x80 | len(msg)]) + mask + bytes(c ^ mask[i % 4] for i, c in enumerate(msg))
 
 
+def jpeg_size(data):
+    """(width, height) from a JPEG header, or None if the header cannot be read."""
+    i = 2
+    while i + 9 <= len(data) and data[i] == 0xFF:
+        marker = data[i + 1]
+        if marker in (0xC0, 0xC1, 0xC2):
+            height, width = struct.unpack(">HH", data[i + 5:i + 9])
+            return width, height
+        if marker == 0xDA:
+            return None
+        i += 2 + struct.unpack(">H", data[i + 2:i + 4])[0]
+    return None
+
+
+def stable_frame(frames, want=None, skip=SKIP_FRAMES):
+    """The first trustworthy frame from an iterable of JPEGs. Raises MakeraError if none arrives.
+
+    A frame is trusted when it comes after the first ``skip``, has the wanted (width, height) if
+    one is given, and matches the previous frame in size and roughly in bytes.
+    """
+    prev, prev_size, size = None, None, None
+    for i, data in enumerate(frames):
+        size = jpeg_size(data)
+        if (i >= skip and size is not None and (want is None or size == want)
+                and size == prev_size
+                and max(len(data), len(prev)) <= MAX_FRAME_RATIO * min(len(data), len(prev))):
+            return data
+        prev, prev_size = data, size
+    if want is not None and size != want:
+        raise MakeraError("the camera did not change to %dx%d. Its last frame was %s."
+                          % (want[0], want[1], "%dx%d" % size if size else "unreadable"))
+    raise MakeraError("no stable frame from the camera. Nothing was saved.")
+
+
 def snapshot(host, out, resolution=None, timeout=8.0):
     """Save one JPEG from the camera to ``out`` and return its size in bytes."""
     if resolution is not None:
@@ -101,15 +144,25 @@ def snapshot(host, out, resolution=None, timeout=8.0):
         if b" 101 " not in status:
             raise MakeraError("camera refused the WebSocket: %s" % status.decode(errors="replace"))
         sock.sendall(text_frame("start_stream"))
-        end = time.time() + timeout
-        while time.time() < end:
-            op, data = read_frame(sock)
-            if op == 2 and data[:2] == b"\xff\xd8":
-                with open(out, "wb") as f:
-                    f.write(data)
-                return len(data)
-            if op == 8:
-                raise MakeraError("camera closed the stream")
-        raise MakeraError("no JPEG frame from the camera in %.0f s" % timeout)
+
+        def jpegs():
+            end = time.time() + timeout
+            while time.time() < end:
+                op, data = read_frame(sock)
+                if op == 2 and data[:2] == b"\xff\xd8":
+                    yield data
+                if op == 8:
+                    raise MakeraError("camera closed the stream")
+
+        want = None
+        if resolution is not None:
+            want = tuple(int(v) for v in RESOLUTIONS[resolution].split("x"))
+        try:
+            data = stable_frame(jpegs(), want)
+        except OSError as e:
+            raise MakeraError("the camera stopped sending frames (%s)" % e)
+        with open(out, "wb") as f:
+            f.write(data)
+        return len(data)
     finally:
         sock.close()

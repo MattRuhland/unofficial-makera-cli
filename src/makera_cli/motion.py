@@ -30,6 +30,14 @@ OUTPUTS = {
 }
 PARK = {"clearance": "M496.1", "origin": "M496.2", "anchor1": "M496.3", "anchor2": "M496.4"}
 
+# On the standard Z1 the reported position is the firmware's own step count. The steppers are
+# open loop, so a lost step does not change it. A test on 2026-10-30 lost about 136 mm on Y with
+# no sign in the status report until the home switch tripped.
+POSITION_NOTE = ("note: this position is what the firmware commanded, not a measurement. Lost "
+                 "steps do not show in it.")
+ALARM_HELP = ("the machine went to Alarm, and the reported position may be wrong. Find the cause, "
+              "then restart the machine, or run makera --yes unlock. Home it before any other move.")
+
 # Printed with the plan, in dry runs and real runs alike, for actions whose risk the safety
 # checks cannot cover.
 WARNINGS = {
@@ -43,6 +51,9 @@ WARNINGS = {
     "send": "WARNING: raw lines get no safety checks. A line can move the machine or spin the "
             "spindle.",
     "spindle": "WARNING: the spindle will spin.",
+    "unlock": "WARNING: unlock clears the alarm and does not correct the position. After a hard "
+              "limit or a stall the reported position may be wrong. Home the machine before any "
+              "other move.",
 }
 
 
@@ -189,8 +200,7 @@ def wait_cycle(sess, start_timeout=8.0, timeout=600.0, settle=3):
             if st is None:
                 continue
             if st["state"] == "Alarm":
-                raise MakeraError("the machine went to Alarm. Check it before "
-                                  "anything else, then run: makera --yes unlock")
+                raise MakeraError(ALARM_HELP)
             if st["state"] != "Idle":
                 started, idle_seen = True, 0
             elif started:
@@ -227,7 +237,7 @@ def wait_idle(sess, timeout=120.0):
                     elif text:
                         print("machine: %s" % text, file=sys.stderr)
             if st and st["state"] == "Alarm":
-                raise MakeraError("the machine went to Alarm. Check it, then run: makera --yes unlock")
+                raise MakeraError(ALARM_HELP)
             idle_seen = idle_seen + 1 if st and st["state"] == "Idle" else 0
             if idle_seen >= 2:
                 return st

@@ -176,3 +176,21 @@ class Warnings(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AlarmHelp(unittest.TestCase):
+    class Sess:
+        def realtime(self, char):
+            pass
+
+        def read(self, seconds):
+            time.sleep(seconds)
+            return [("status", "<Alarm|MPos:-5,-136.121,-1,0|WPos:0,0,0,0>")]
+
+    def test_says_position_may_be_wrong_and_to_home(self):
+        for wait in (wait_idle, wait_cycle):
+            with self.assertRaisesRegex(MakeraError, "position may be wrong.*Home it"):
+                wait(self.Sess())
+
+    def test_unlock_warns(self):
+        self.assertIn("Home the machine", WARNINGS["unlock"])

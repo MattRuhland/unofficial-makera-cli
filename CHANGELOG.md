@@ -12,6 +12,22 @@ All notable changes to this project are listed here. The format follows
   macros that pass through Idle between steps.
 - `wcs` reports the active work coordinate system from `get wcs`, as `active`.
 - `probe-laser on|off`: the probe alignment laser (`M494.1` / `M494.2`).
+- `limits`: the feed limits the firmware is using now, from `M203.1` and `M203`.
+
+### Changed
+
+- The Alarm error no longer sends you straight to `unlock`. It says the position may be wrong and
+  that the machine needs homing. `unlock` prints a warning, and `status` adds a note during Alarm.
+- After a move, the final line reads `reported` and a note says the position is commanded, not
+  measured.
+- `config` prints a note on stderr that its values come from the file and can differ from live ones.
+
+### Fixed
+
+- `snapshot --resolution` could save a frame at the old size with no error. It now waits for the
+  requested size and fails if it does not arrive.
+- `snapshot` could save the garbled frame the camera sends during a size change. It now skips the
+  first frames and saves only a frame that matches the one before it.
 
 ## [0.1.1] - 2026-10-26
 

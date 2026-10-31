@@ -49,6 +49,7 @@ This is an early release. The table shows what has been exercised against a real
 | Reading | `status`, `version`, `wcs`, `diagnose` | Yes |
 | Files | `ls`, `download`, `config` | Yes. A downloaded file matched the original's MD5. |
 | Files | `upload` | Yes. Size and the machine's `upload success` confirmed. |
+| Reading | `limits` | Yes, except the refusal during Alarm, which is tested offline. |
 | Camera | `snapshot` | Yes |
 | Actions | `light` | Yes. On and off confirmed with `diagnose`. |
 | Actions | `probe-laser` | Yes |
@@ -181,6 +182,18 @@ active G54
 
 Prints the switch and sensor report as raw values: spindle (`S`), laser (`L`), vacuum (`V`), spindle fan (`F`), light (`G`), tool sensor (`T`), inputs (`E`), WiFi signal strength (`RSSI`) and others. The meaning of each field follows the community controller's diagnose screen.
 
+#### `limits`
+
+Prints the feed limits the firmware is using now, from `M203.1` (each motor) and `M203` (each axis), in mm/min. Every move is held to both on each axis, so the lower one applies. A move faster than this slows down with no error. This command only reads. The firmware refuses it during Alarm.
+
+```console
+$ makera limits
+axis  effective  actuator  cartesian  (mm/min)
+X          1200      1200       4000
+Y          1200      1200       4000
+Z           600       600       2000
+```
+
 ### Files on the SD card
 
 #### `ls [DIR]`
@@ -207,6 +220,8 @@ Downloads a file and prints its size and MD5. The default local name is the remo
 
 Downloads `/sd/config.txt` and prints every setting, or only the keys you name. `--save` keeps the raw file.
 
+These are the values in the file. The firmware can use different ones: it has built-in values for keys the file leaves out, and `M203.1` changes feed limits in memory without changing the file. A note on stderr says so, which keeps stdout parseable. For the feed limits in use now, run `limits`.
+
 ```console
 $ makera config soft_endstop.enable soft_endstop.x_min soft_endstop.y_min soft_endstop.z_min
 soft_endstop.enable                      true
@@ -223,7 +238,9 @@ Saves one frame from the built-in camera. The default file is `makera-snapshot.j
 
 The camera serves one stream and gives it to the newest client. A snapshot cuts off a live camera view open in Makera Studio, and Studio may not reconnect until you reopen its camera view.
 
-`--resolution` sets the camera's frame size before capture. The setting persists on the camera and affects every viewer.
+`--resolution` sets the camera's frame size before capture. The setting persists on the camera and affects every viewer. The CLI waits for frames of the new size, and fails with an error if they do not arrive.
+
+The CLI skips the first frames of the stream and saves only a frame that matches the one before it. This takes a moment, and it avoids the bad frame the camera sends during a size change, which is a valid JPEG that decodes to garbage.
 
 | Value | Size | Approximate frame rate |
 |---|---|---|
@@ -249,12 +266,13 @@ $ makera --yes goto X0 Y0 Z5
 send G53 G0 Z-2
 send G90 G0 X0Y0
 send G90 G0 Z5
-state Idle  machine X  -102.288  Y  -106.732  Z   -63.486  A     0.000
+state Idle  reported X  -102.288  Y  -106.732  Z   -63.486  A     0.000
+note: this position is what the firmware commanded, not a measurement. Lost steps do not show in it.
 ```
 
 The second output is illustrative, because `goto` in work coordinates has not yet run against a real machine. `goto --machine` has (see [Status](#status)).
 
-After any move, the CLI polls status until the machine is Idle and then prints the final machine position. Pressing Ctrl-C while it waits stops the CLI and sends nothing to the machine. The machine keeps moving. Use its stop button to stop it.
+After any move, the CLI polls status until the machine is Idle and then prints the reported machine position. That position is what the firmware commanded, not a measurement (see [Known firmware behaviour](#known-firmware-behaviour)). Pressing Ctrl-C while it waits stops the CLI and sends nothing to the machine. The machine keeps moving. Use its stop button to stop it.
 
 Some actions print a warning with their plan, in dry runs and real runs alike: `play`, `pause`, `send` and `spindle on`.
 
@@ -263,7 +281,7 @@ Actions need the machine Idle, with three exceptions. `pause`, `resume` and `abo
 | Command | Sends | Notes |
 |---|---|---|
 | `home` | `$H` | Homes all axes. |
-| `unlock` | `$X` | Clears an alarm. Find the cause first. |
+| `unlock` | `$X` | Clears an alarm. Find the cause first. It does not correct the position, so home the machine before any other move. |
 | `jog AXIS... [--feed F]` | `$J X10`, one line per axis | Relative moves, for example `jog X10 Y-5 Z2`. Each target is checked against the soft limits. Axes move one after another. |
 | `goto AXIS... [--machine] [--direct]` | `G90 G0 ...` or `G53 G0 ...` | Rapid move in work coordinates, or machine coordinates with `--machine`. Raises Z to machine Z-2 first unless `--direct`, then moves XY, then Z. Checked against the soft limits. |
 | `park clearance\|origin\|anchor1\|anchor2` | `M496.1` to `M496.4` | Moves to the clearance position, the work origin, or anchor 1 or 2. |
@@ -301,6 +319,7 @@ What the CLI cannot know:
 - Clamps, vises, fixtures and the stock itself. The soft limits describe only the machine's travel.
 - Whether a tool is really in the collet, or which tool it is.
 - Whether the machine has been homed since power-on, or whether homing has drifted.
+- Where the axes really are. The reported position is what the firmware commanded.
 - Anything about `send`. Raw lines go straight to the machine.
 - What the firmware does on its own, such as the end-of-job routine below.
 
@@ -314,6 +333,9 @@ Observed on a Z1 with firmware `1.1.3.0.1.13`:
 
 | Behaviour | Detail |
 |---|---|
+| Reported position is not measured | `MPos`, `WPos` and the reported feed come from the firmware's own commands, and the Z1's steppers are open loop. In a test with X and Y limits raised to 2,000 mm/min, Y lost about 136 mm. The status report still showed the commanded position and feed, with no sign of a fault until the home switch tripped. |
+| Hard limit leaves the position wrong | After a hard limit, the state is `Alarm` and the reported position may be far from the real one. In the same test Y read -136.121 at the home switch. A restart cleared the alarm. Home the machine before any other move. |
+| Alarm blocks commands | During `Alarm`, `M203.1` and `M822` return `error:Alarm lock`. A limit raised in memory cannot be lowered until the alarm clears. |
 | Feed hold does not stop motion | After `!` (the `pause` command), the state reads `Hold`, but the axes keep moving at the programmed feed and the queued moves end on schedule. This was measured by polling position every 0.9 seconds over one connection, for a console `G1` move and during file playback. `resume` returns the state to `Run`. |
 | Position is misreported during Hold | While the state is `Hold`, `MPos` in the status report shows the end point of the queued moves. The true position is unknown until the state leaves `Hold`. |
 | Automatic bed cleaning after a job | When playback of any file ends, the firmware runs its bed-cleaning routine if `bed_cleaning.enable` is `true` in `config.txt`. The machine moves to the front of the bed, lowers the brush and can spin the loaded cutter. This happens even when the file contains no spindle command. Check the setting with `makera config bed_cleaning.enable`. |
@@ -336,6 +358,8 @@ makera --json wcs | jq '.PRB'
 # Soft limits
 makera --json config soft_endstop.x_min soft_endstop.y_min soft_endstop.z_min
 ```
+
+`limits --json` contains `actuator`, `cartesian` and `effective`, each with `X`, `Y` and `Z` in mm/min.
 
 `status --json` contains `state`, `mpos`, `wpos`, `tool`, `tlo`, `feed`, `spindle`, `playing` (only while a job runs) and `raw`, which holds every field of the status report as reported.
 

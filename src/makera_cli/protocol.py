@@ -211,6 +211,19 @@ def parse_diag(line):
     return d
 
 
+def parse_limits(lines):
+    """A reply to ``M203`` or ``M203.1``, such as `` X: 20  Y: 20  Z: 10 ``, in mm/min per axis.
+
+    The firmware reports mm/s. Only X, Y and Z are returned, because the other letters are not
+    feed limits in the same unit.
+    """
+    for line in lines:
+        got = dict(re.findall(r"([XYZ]): *(-?[0-9.]+)", line))
+        if len(got) == 3:
+            return {k: round(float(got[k]) * 60.0, 1) for k in "XYZ"}
+    raise MakeraError("no feed limits in the reply: %r" % (lines,))
+
+
 def parse_ls(lines):
     """``name size YYYYmmddHHMMSS`` rows as dicts. A trailing / marks a directory."""
     out = []

@@ -11,9 +11,10 @@ import time
 from makera_cli import MakeraError, __version__
 from makera_cli.camera import RESOLUTIONS, snapshot
 from makera_cli.link import PORT, discover
-from makera_cli.motion import OUTPUTS, PARK, WARNINGS, plan, soft_limits, wait_cycle, wait_idle
-from makera_cli.protocol import (Session, parse_active_wcs, parse_config, parse_diag, parse_ls,
-                                 parse_wcs, path_arg)
+from makera_cli.motion import (OUTPUTS, PARK, POSITION_NOTE, WARNINGS, plan, soft_limits,
+                               wait_cycle, wait_idle)
+from makera_cli.protocol import (Session, parse_active_wcs, parse_config, parse_diag, parse_limits,
+                                 parse_ls, parse_wcs, path_arg)
 from makera_cli.transfer import download, upload
 
 READ_STATES = ("Idle", "Sleep", "Alarm")
@@ -28,6 +29,8 @@ def fmt_axes(d):
 
 def show_status(s):
     print("state     %s" % s["state"])
+    if s["state"] == "Alarm":
+        print("note      the positions below may be wrong. Home the machine before any move.")
     for k in ("mpos", "wpos"):
         if k in s:
             print("%-9s %s" % (k, fmt_axes(s[k])))
@@ -56,6 +59,27 @@ def show_wcs(wcs, other):
             print("%-6s %s" % (name, fmt_axes(v)))
     for line in other:
         print(line)
+
+
+def read_limits(sess):
+    """The limits the firmware is using now, in mm/min, from M203.1 and M203."""
+    out = {}
+    for name, cmd in (("actuator", "M203.1"), ("cartesian", "M203")):
+        sess.command(cmd)
+        reply = sess.lines()
+        if any("Alarm lock" in line for line in reply):
+            raise MakeraError("the firmware refuses %s during Alarm. Clear the alarm first." % cmd)
+        out[name] = parse_limits(reply)
+    # Every move is held to both limits on each axis, so the lower one applies.
+    out["effective"] = {k: min(out["actuator"][k], out["cartesian"][k]) for k in "XYZ"}
+    return out
+
+
+def show_limits(lim):
+    print("axis  effective  actuator  cartesian  (mm/min)")
+    for k in "XYZ":
+        print("%-4s  %9.0f  %8.0f  %9.0f" % (k, lim["effective"][k], lim["actuator"][k],
+                                             lim["cartesian"][k]))
 
 
 def fetch_config(sess, save=None):
@@ -119,7 +143,9 @@ def run_action(sess, a, st):
             for text in sess.lines(quiet=0.5, timeout=3.0):
                 print("machine: %s" % text)
     st = sess.status()
-    print("state %s  machine %s" % (st["state"], fmt_axes(st.get("mpos", {}))))
+    print("state %s  reported %s" % (st["state"], fmt_axes(st.get("mpos", {}))))
+    if getattr(a, "wait", False) or any(moves for _, moves in steps):
+        print(POSITION_NOTE)
 
 
 def build_parser():
@@ -144,9 +170,11 @@ def build_parser():
     sub.add_parser("version", help="firmware version")
     sub.add_parser("wcs", help="work offsets, tool length and last probe point ($#)")
     sub.add_parser("diagnose", help="switch and sensor states")
+    sub.add_parser("limits", help="feed limits the firmware is using now (M203.1, M203)")
     p = sub.add_parser("ls", help="list a directory on the SD card")
     p.add_argument("dir", nargs="?", default="/sd/gcodes")
-    p = sub.add_parser("config", help="download config.txt and print it, or the named keys")
+    p = sub.add_parser("config", help="download config.txt and print it, or the named keys. "
+                                         "Shows the file: use limits for live feed limits")
     p.add_argument("keys", nargs="*")
     p.add_argument("--save", metavar="PATH", help="also keep the raw config.txt here")
     p = sub.add_parser("download", help="copy a file from the SD card")
@@ -254,6 +282,12 @@ def run(a):
             sess.command("diagnose")
             d = parse_diag(sess.wait_for("diag"))
             print(json.dumps(d) if a.json else "\n".join("%-6s %s" % kv for kv in d.items()))
+        elif a.cmd == "limits":
+            lim = read_limits(sess)
+            if a.json:
+                print(json.dumps(lim))
+            else:
+                show_limits(lim)
         elif a.cmd == "ls":
             sess.command("ls -e -s %s" % path_arg(a.dir.rstrip("/") or "/"))
             rows = parse_ls(sess.load())
@@ -268,8 +302,11 @@ def run(a):
             if a.keys:
                 for k in a.keys:
                     if k not in conf:
-                        print("not in config.txt: %s" % k, file=sys.stderr)
+                        print("not in config.txt: %s (the firmware may have a built-in value)" % k,
+                              file=sys.stderr)
                 conf = {k: conf[k] for k in a.keys if k in conf}
+            print("note: these are the values in config.txt. The live values can differ. "
+                  "Run makera limits for feed limits.", file=sys.stderr)
             if a.json:
                 print(json.dumps(conf))
             else:
